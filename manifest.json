@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.keegan-sucks.rss-feeder",
   "name": "RSS-Feeder",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": "keegan-sucks",
   "license": "MIT",
   "description": "Native RSS and Atom reader for the Omarchy bar with OPML, per-feed category editing, YouTube Shorts filtering, search, unread tracking, and configurable retention.",
