@@ -988,7 +988,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰑫"
-    tooltipText: root.badgeCount > 0 ? ("RSS-Reeder · " + root.badgeCount + " unread") : "RSS-Reeder"
+    tooltipText: root.badgeCount > 0 ? ("RSS-Feeder · " + root.badgeCount + " unread") : "RSS-Feeder"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.togglePanel()
     }

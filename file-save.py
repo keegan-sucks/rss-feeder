@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Native desktop portal SaveFile helper for Omarchy RSS-Reeder
+# Native desktop portal SaveFile helper for Omarchy RSS-Feeder
 import argparse
 import os
 import sys
@@ -16,7 +16,7 @@ EXIT_CHOOSER_FAILED = 2
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--title", default="Save OPML file")
-    parser.add_argument("--default-name", default="rss-reeder.opml")
+    parser.add_argument("--default-name", default="rss-feeder.opml")
     parser.add_argument("--extensions", default="opml xml")
     args, unknown = parser.parse_known_args()
 
