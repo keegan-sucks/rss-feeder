@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.sanjyay.rss-reeder",
-  "name": "RSS-Reeder",
-  "version": "0.1.0",
-  "author": "sanjyay",
+  "id": "io.github.keegan-sucks.rss-feeder",
+  "name": "RSS-Feeder",
+  "version": "0.2.0",
+  "author": "keegan-sucks",
   "license": "MIT",
-  "description": "Native RSS and Atom reader for the Omarchy bar with OPML, categories, search, unread tracking, and configurable retention.",
+  "description": "Native RSS and Atom reader for the Omarchy bar with OPML, per-feed category editing, YouTube Shorts filtering, search, unread tracking, and configurable retention.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "RSS-Reeder",
+    "displayName": "RSS-Feeder",
     "category": "Productivity",
     "allowMultiple": false,
     "defaultSection": "right"

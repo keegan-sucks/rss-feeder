@@ -20,7 +20,18 @@ Item {
   width: parent ? parent.width : 300
 
   readonly property color mutedColor: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.45)
+  // Hover must stay true while the cursor is over ANY of the row's own mouse areas,
+  // including the action buttons. Reading only mouseArea.containsMouse caused the
+  // buttons to flicker: moving onto a button stole hover from the row, hid the
+  // buttons, which released the cursor, which re-showed them — an endless loop.
   readonly property bool hovered: mouseArea.containsMouse
+    || markZone.containsMouse
+    || markHover.containsMouse
+    || linkHover.containsMouse
+
+  // Reserve a fixed strip on the right for the hover actions so the title text
+  // never reflows when they appear/disappear (reflow was a second flicker source).
+  readonly property int actionStripWidth: Style.space(72)
 
   Rectangle {
     anchors.fill: parent
@@ -32,6 +43,7 @@ Item {
     Behavior on color { ColorAnimation { duration: 80 } }
   }
 
+  // Row body click opens the article (unchanged behavior).
   MouseArea {
     id: mouseArea
     anchors.fill: parent
@@ -40,47 +52,60 @@ Item {
     onClicked: root.activated()
   }
 
-  // Unread dot indicator
-  Item {
-    id: unreadDot
+  // Persistent, full-height mark-read zone on the left. Always visible and large,
+  // so there is a stable target that never flashes and is hard to miss. Clicking
+  // it toggles read/unread; it does NOT open the article.
+  Rectangle {
+    id: markZoneBg
     anchors.left: parent.left
-    anchors.leftMargin: Style.space(4)
-    anchors.verticalCenter: parent.verticalCenter
-    width: Style.space(8)
-    height: parent.height
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    width: Style.space(26)
+    radius: Style.space(4)
+    color: markZone.containsMouse
+      ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.08)
+      : "transparent"
 
     Rectangle {
       anchors.centerIn: parent
-      width: root.isRead ? Style.space(4) : Style.space(6)
+      width: root.isRead ? Style.space(6) : Style.space(9)
       height: width
       radius: width / 2
       color: root.isRead ? "transparent" : Color.accent
-      border.color: root.isRead ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.15) : "transparent"
-      border.width: 1
+      border.color: root.isRead ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.30) : "transparent"
+      border.width: Style.space(1)
+    }
+
+    MouseArea {
+      id: markZone
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.toggleRead()
     }
   }
 
-  // Action buttons visible on hover or selection (anchored right)
+  // Action buttons on the right, shown on hover or when selected.
   Row {
     id: actionRow
     visible: root.hovered || root.isSelected
     anchors.right: parent.right
-    anchors.rightMargin: Style.space(4)
+    anchors.rightMargin: Style.space(6)
     anchors.verticalCenter: parent.verticalCenter
-    spacing: Style.space(2)
+    spacing: Style.space(4)
 
-    // Mark read/unread toggle
+    // Mark read/unread toggle (enlarged for an easy target).
     Rectangle {
-      width: Style.space(22)
-      height: Style.space(22)
-      radius: Style.space(4)
-      color: markHover.containsMouse ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.1) : "transparent"
+      width: Style.space(30)
+      height: Style.space(30)
+      radius: Style.space(6)
+      color: markHover.containsMouse ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.12) : "transparent"
 
       Text {
         anchors.centerIn: parent
         text: root.isRead ? "󰄱" : "󰄬"
         font.family: root.contentFontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
         color: root.isRead ? root.mutedColor : Color.accent
       }
 
@@ -93,18 +118,18 @@ Item {
       }
     }
 
-    // Open in browser button
+    // Open in browser button (enlarged).
     Rectangle {
-      width: Style.space(22)
-      height: Style.space(22)
-      radius: Style.space(4)
-      color: linkHover.containsMouse ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.1) : "transparent"
+      width: Style.space(30)
+      height: Style.space(30)
+      radius: Style.space(6)
+      color: linkHover.containsMouse ? Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.12) : "transparent"
 
       Text {
         anchors.centerIn: parent
         text: "󰌹"
         font.family: root.contentFontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
         color: root.mutedColor
       }
 
@@ -118,13 +143,14 @@ Item {
     }
   }
 
-  // Title and metadata column (stretches to fill available space)
+  // Title and metadata column. Right edge is fixed (reserves the action strip)
+  // so the text never shifts when the hover buttons toggle.
   Column {
     id: textCol
-    anchors.left: unreadDot.right
+    anchors.left: markZoneBg.right
     anchors.leftMargin: Style.space(6)
-    anchors.right: actionRow.visible ? actionRow.left : parent.right
-    anchors.rightMargin: actionRow.visible ? Style.space(4) : Style.space(4)
+    anchors.right: parent.right
+    anchors.rightMargin: root.actionStripWidth
     anchors.verticalCenter: parent.verticalCenter
     spacing: 1
 

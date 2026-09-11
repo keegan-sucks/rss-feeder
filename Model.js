@@ -111,23 +111,25 @@ function filterItems(items, query) {
   return out
 }
 
-function serializeState(items, readSet) {
+function serializeState(items, readSet, shortsCache) {
   return JSON.stringify({
     version: 1,
     items: items || [],
-    readIdentities: readIdentities(serializeReadIdentities(readSet))
+    readIdentities: readIdentities(serializeReadIdentities(readSet)),
+    shortsCache: normalizeShortsCache(shortsCache)
   })
 }
 
 function parseState(text) {
-  var empty = { items: [], readIdentities: [] }
+  var empty = { items: [], readIdentities: [], shortsCache: {} }
   if (!text) return empty
   try {
     var data = JSON.parse(String(text))
     if (!data || typeof data !== "object") return empty
     return {
       items: uniqueItems(data.items || []),
-      readIdentities: readIdentities(data.readIdentities)
+      readIdentities: readIdentities(data.readIdentities),
+      shortsCache: normalizeShortsCache(data.shortsCache)
     }
   } catch (e) {
     return empty
@@ -1479,6 +1481,113 @@ function relativeTime(pubDateMs, nowMs) {
   return days + "d"
 }
 
+// Assign (or clear) the category of a single existing subscription, identified by
+// url. An empty / "none" input clears it; an unknown name creates a new category.
+// Returns { subscriptions } ready for hostWidget.updateSubscriptions.
+function setSubscriptionCategory(subscriptions, url, categoryInput) {
+  var list = normalizeSubscriptions(subscriptions)
+  var target = String(url || "")
+  var catInfo = normalizeCategorySelection(categoryInput, list)
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var s = list[i]
+    if (s && s.url === target) {
+      out.push({
+        url: s.url,
+        title: s.title,
+        categoryPath: catInfo.categoryPath,
+        category: catInfo.category,
+        enabled: s.enabled
+      })
+    } else {
+      out.push(s)
+    }
+  }
+  return { subscriptions: normalizeSubscriptions(out) }
+}
+
+// --- YouTube Shorts filtering -------------------------------------------------
+// YouTube's RSS feed carries no duration or Shorts flag, so a Short and a normal
+// upload look identical in the feed. We detect Shorts out-of-band: requesting
+// https://www.youtube.com/shorts/<id> returns HTTP 200 for a real Short and a
+// 3xx redirect (to /watch) for a regular video. Results are cached per video id
+// so each video is probed at most once.
+
+function isYouTubeFeedUrl(url) {
+  var u = String(url || "").toLowerCase()
+  return u.indexOf("youtube.com/feeds/videos.xml") !== -1
+    || u.indexOf("youtube.com/feeds/") !== -1
+}
+
+function youTubeVideoId(item) {
+  if (!item) return ""
+  var id = String(item.identity || "")
+  var m = id.match(/yt:video:([A-Za-z0-9_-]{6,})/)
+  if (m) return m[1]
+  var link = String(item.link || "")
+  var lm = link.match(/[?&]v=([A-Za-z0-9_-]{6,})/)
+  if (lm) return lm[1]
+  var sm = link.match(/\/shorts\/([A-Za-z0-9_-]{6,})/)
+  if (sm) return sm[1]
+  return ""
+}
+
+function shortsProbeUrl(videoId) {
+  return "https://www.youtube.com/shorts/" + String(videoId || "")
+}
+
+// Classify from the HTTP status of a (non-following) request to the /shorts/ URL.
+// 200 => Short; any 3xx redirect => regular video; anything else => unknown
+// (leave unclassified rather than risk dropping a real video on a transient error).
+function classifyShortStatus(httpCode) {
+  var code = Number(httpCode)
+  if (code === 200) return "short"
+  if (code >= 300 && code < 400) return "video"
+  return ""
+}
+
+function normalizeShortsCache(raw) {
+  var out = {}
+  if (raw && typeof raw === "object") {
+    for (var k in raw) {
+      var v = raw[k]
+      if (v === "short" || v === "video") out[k] = v
+    }
+  }
+  return out
+}
+
+// Drop items whose video id is cached as a Short. Non-YouTube items (no video id)
+// are always kept. A no-op when `enabled` is false.
+function filterShorts(items, cache, enabled) {
+  var list = items || []
+  if (!enabled) return list
+  var c = normalizeShortsCache(cache)
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var vid = youTubeVideoId(list[i])
+    if (vid && c[vid] === "short") continue
+    out.push(list[i])
+  }
+  return out
+}
+
+// Distinct video ids among these items that have no cached verdict yet.
+function unknownShortCandidates(items, cache, enabled) {
+  if (!enabled) return []
+  var list = items || []
+  var c = normalizeShortsCache(cache)
+  var seen = {}
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var vid = youTubeVideoId(list[i])
+    if (!vid || c[vid] || seen[vid]) continue
+    seen[vid] = true
+    out.push(vid)
+  }
+  return out
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     pollIntervalMinutes: pollIntervalMinutes,
@@ -1538,6 +1647,13 @@ if (typeof module !== "undefined" && module.exports) {
     parseRss20: parseRss20,
     parseAtom: parseAtom,
     parseFeed: parseFeed,
+    isYouTubeFeedUrl: isYouTubeFeedUrl,
+    youTubeVideoId: youTubeVideoId,
+    shortsProbeUrl: shortsProbeUrl,
+    classifyShortStatus: classifyShortStatus,
+    normalizeShortsCache: normalizeShortsCache,
+    filterShorts: filterShorts,
+    unknownShortCandidates: unknownShortCandidates,
     looksLikeHtml: looksLikeHtml,
     discoverFeedUrls: discoverFeedUrls,
     guessFeedUrls: guessFeedUrls,
@@ -1548,6 +1664,7 @@ if (typeof module !== "undefined" && module.exports) {
     getAvailableCategories: getAvailableCategories,
     normalizeCategorySelection: normalizeCategorySelection,
     addSubscription: addSubscription,
+    setSubscriptionCategory: setSubscriptionCategory,
     removeSubscription: removeSubscription,
     pruneArticlesBySubscriptions: pruneArticlesBySubscriptions,
     mergeFeedArticles: mergeFeedArticles,

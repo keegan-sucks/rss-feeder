@@ -20,6 +20,9 @@ Item {
   property bool isCustomCategoryMode: false
   property bool categoryDropdownOpen: false
   property string customCategoryText: ""
+  // Inline per-row category editing (for subscriptions that already exist).
+  property string editingCategoryUrl: ""
+  property string editingCategoryText: ""
 
   property string statusMessage: ""
   property bool statusIsError: false
@@ -104,6 +107,26 @@ Item {
       root.hostWidget.updateSubscriptions(next)
     }
     root.subscriptionsUpdated(next)
+  }
+
+  function startEditCategory(sub) {
+    root.editingCategoryUrl = sub.url
+    root.editingCategoryText = sub.category || ""
+  }
+
+  function cancelEditCategory() {
+    root.editingCategoryUrl = ""
+    root.editingCategoryText = ""
+  }
+
+  function saveRowCategory(url, text) {
+    var res = Model.setSubscriptionCategory(root.subscriptions, url, text)
+    if (root.hostWidget && typeof root.hostWidget.updateSubscriptions === "function") {
+      root.hostWidget.updateSubscriptions(res.subscriptions)
+    }
+    root.subscriptionsUpdated(res.subscriptions)
+    root.editingCategoryUrl = ""
+    root.editingCategoryText = ""
   }
 
   function removeSub(sub) {
@@ -735,27 +758,98 @@ Item {
             }
           }
 
-          // Category Badge Pill
-          Rectangle {
+          // Category: click the pill to edit. Shows the category name when set,
+          // or a "+ Add category" affordance when not. Editing opens an inline
+          // field (Enter saves, Esc cancels, blank clears the category).
+          Item {
             id: catBadge
-            visible: Boolean(modelData.category)
-            height: Style.space(20)
-            width: catBadgeText.implicitWidth + Style.space(10)
-            radius: Style.space(10)
+            readonly property bool editing: root.editingCategoryUrl === modelData.url
+            visible: true
             anchors.verticalCenter: parent.verticalCenter
-            color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.12)
-            border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.25)
-            border.width: 1
+            height: Style.space(24)
+            width: editing ? Style.space(150) : pill.width
 
-            Text {
-              id: catBadgeText
-              anchors.centerIn: parent
-              text: modelData.category || ""
-              textFormat: Text.PlainText
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: Color.accent
+            // View mode: pill
+            Rectangle {
+              id: pill
+              visible: !catBadge.editing
+              anchors.verticalCenter: parent.verticalCenter
+              height: Style.space(20)
+              width: pillText.implicitWidth + Style.space(14)
+              radius: Style.space(10)
+              color: Boolean(modelData.category)
+                ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.12)
+                : (pillHover.containsMouse ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06) : "transparent")
+              border.color: Boolean(modelData.category)
+                ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.25)
+                : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.22)
+              border.width: 1
+
+              Text {
+                id: pillText
+                anchors.centerIn: parent
+                text: modelData.category ? modelData.category : "+ Add category"
+                textFormat: Text.PlainText
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: Boolean(modelData.category)
+                color: modelData.category ? Color.accent : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.55)
+              }
+
+              MouseArea {
+                id: pillHover
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.startEditCategory(modelData)
+              }
+            }
+
+            // Edit mode: inline text field
+            Rectangle {
+              id: catEditor
+              visible: catBadge.editing
+              anchors.fill: parent
+              radius: Style.space(6)
+              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
+              border.color: Color.accent
+              border.width: 1
+
+              TextInput {
+                id: catInput
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(8)
+                anchors.rightMargin: Style.space(8)
+                verticalAlignment: TextInput.AlignVCenter
+                clip: true
+                text: root.editingCategoryText
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                color: root.contentForeground
+                selectByMouse: true
+                onTextChanged: if (catBadge.editing) root.editingCategoryText = text
+                onAccepted: root.saveRowCategory(modelData.url, text)
+                Keys.onEscapePressed: root.cancelEditCategory()
+                onVisibleChanged: {
+                  if (visible) {
+                    text = root.editingCategoryText
+                    forceActiveFocus()
+                    selectAll()
+                  }
+                }
+              }
+
+              Text {
+                visible: catInput.text.length === 0
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(9)
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Category (blank = none)"
+                textFormat: Text.PlainText
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.4)
+              }
             }
           }
 

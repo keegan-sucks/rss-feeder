@@ -14,6 +14,7 @@ Item {
   property int retentionDays: 30
   property string barSection: "right"
   property bool unreadOnlyDefault: false
+  property bool stripYouTubeShorts: true
   property string shareStatus: ""
   property color contentForeground: Color.foreground
   property string contentFontFamily: Style.font.family
@@ -32,7 +33,8 @@ Item {
         root.itemsPerPage,
         root.barSection,
         root.unreadOnlyDefault,
-        root.retentionDays
+        root.retentionDays,
+        root.stripYouTubeShorts
       )
     }
   }
@@ -661,6 +663,59 @@ Item {
                       cursorShape: Qt.PointingHandCursor
                       onClicked: {
                         root.unreadOnlyDefault = !root.unreadOnlyDefault
+                        root.applySettings()
+                      }
+                    }
+                  }
+                }
+              }
+
+              Rectangle { width: parent.width; height: 1; color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06) }
+
+              // Strip YouTube Shorts
+              Item {
+                width: parent.width
+                height: Style.space(38)
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(14)
+                  anchors.rightMargin: Style.space(14)
+                  spacing: Style.space(8)
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - Style.space(60)
+                    text: "Strip YouTube Shorts"
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.body
+                    color: root.contentForeground
+                  }
+
+                  Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(36)
+                    height: Style.space(20)
+                    radius: Style.space(10)
+                    color: root.stripYouTubeShorts
+                      ? Color.accent
+                      : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.15)
+
+                    Rectangle {
+                      width: Style.space(16)
+                      height: Style.space(16)
+                      radius: width / 2
+                      anchors.verticalCenter: parent.verticalCenter
+                      x: root.stripYouTubeShorts ? parent.width - width - Style.space(2) : Style.space(2)
+                      color: Color.background
+                      Behavior on x { NumberAnimation { duration: 100 } }
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: {
+                        root.stripYouTubeShorts = !root.stripYouTubeShorts
                         root.applySettings()
                       }
                     }

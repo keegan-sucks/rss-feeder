@@ -1,8 +1,8 @@
-# RSS-Reeder
+# RSS-Feeder
 
 A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categories, unread tracking, search, and configurable retention.
 
-![RSS-Reeder preview](preview.png)
+![RSS-Feeder preview](preview.png)
 
 ---
 
@@ -11,7 +11,8 @@ A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categ
 - **RSS & Atom Support**: Fetches RSS 2.0 and Atom 1.0 feeds over secure HTTPS.
 - **Omarchy Bar Integration**: Seamless desktop bar widget with clean unread status and quick popup launcher.
 - **Category Drawer**: Group subscriptions into folders and filter articles instantly by category.
-- **Category Selection & Creation**: Choose existing categories with alphabetical sorting or create new categories inline when adding feeds.
+- **Category Selection & Creation**: Choose existing categories with alphabetical sorting or create new categories inline when adding feeds — or edit/assign a category on any existing feed straight from the subscription list.
+- **YouTube Shorts Filtering**: Automatically hides YouTube Shorts from YouTube feeds (detected out-of-band and cached per video), so your reader shows only full-length uploads. Toggle in Settings.
 - **Search & Filtering**: Live instantaneous search across article titles, snippets, feed sources, and categories.
 - **Unread Tracking**: Mark articles as read/unread manually or automatically upon opening; filter to unread-only articles anytime.
 - **OPML Import & Export**: Full OPML 2.0 file import and export with folder preservation via native desktop file choosers.
@@ -26,14 +27,14 @@ A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categ
 
 ### Reader
 
-![RSS-Reeder reader](docs/screenshots/reader.png)
+![RSS-Feeder reader](docs/screenshots/reader.png)
 
 ### Categories
 
 <details>
 <summary>View screenshot</summary>
 
-![RSS-Reeder category drawer](docs/screenshots/categories.png)
+![RSS-Feeder category drawer](docs/screenshots/categories.png)
 
 </details>
 
@@ -42,7 +43,7 @@ A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categ
 <details>
 <summary>View screenshot</summary>
 
-![RSS-Reeder OPML import and export](docs/screenshots/opml.png)
+![RSS-Feeder OPML import and export](docs/screenshots/opml.png)
 
 </details>
 
@@ -51,7 +52,7 @@ A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categ
 <details>
 <summary>View screenshot</summary>
 
-![RSS-Reeder settings](docs/screenshots/settings.png)
+![RSS-Feeder settings](docs/screenshots/settings.png)
 
 </details>
 
@@ -59,10 +60,10 @@ A native RSS and Atom reader for the Omarchy bar, with OPML import/export, categ
 
 ## Installation
 
-RSS-Reeder is a third-party Omarchy plugin. You can install and enable it directly using the Omarchy CLI:
+RSS-Feeder is a third-party Omarchy plugin. You can install and enable it directly using the Omarchy CLI:
 
 ```bash
-omarchy plugin add https://github.com/sanjyay/rss-reeder.git --enable
+omarchy plugin add https://github.com/keegan-sucks/rss-feeder.git --enable
 ```
 
 After installation, reload the desktop shell if needed:
@@ -71,14 +72,14 @@ After installation, reload the desktop shell if needed:
 omarchy-restart-shell
 ```
 
-The RSS-Reeder icon (`󰑫`) will appear in the right section of your Omarchy bar.
+The RSS-Feeder icon (`󰑫`) will appear in the right section of your Omarchy bar.
 
 ### Updating
 
 To update to the latest release:
 
 ```bash
-omarchy plugin update io.github.sanjyay.rss-reeder
+omarchy plugin update io.github.keegan-sucks.rss-feeder
 omarchy-restart-shell
 ```
 
@@ -86,7 +87,7 @@ omarchy-restart-shell
 
 ## Usage
 
-1. **Open the Reader**: Click the RSS-Reeder icon in your bar or summon it via keyboard shortcut.
+1. **Open the Reader**: Click the RSS-Feeder icon in your bar or summon it via keyboard shortcut.
 2. **Add Feeds**: Open **Settings** (`󰒓`) → **Manage feeds** (`+ Add feed`) to add feed URLs manually.
 3. **Import Subscriptions**: Click **Import OPML file** in Settings to load an existing `.opml` or `.xml` subscription list.
 4. **Browse & Read**:
@@ -99,7 +100,7 @@ omarchy-restart-shell
 
 ## OPML Import & Export
 
-RSS-Reeder provides native desktop integration for OPML subscription management:
+RSS-Feeder provides native desktop integration for OPML subscription management:
 
 - **Import OPML File**: Opens the native desktop file chooser to select `.opml` or `.xml` files. Imports all valid HTTPS feed URLs and restores their category folders. The import operation runs in the background and safely completes even if the popup closes.
 - **Export OPML File**: Generates standard OPML 2.0 XML containing all your active subscriptions, feed titles, URLs, and folder structures, saving it to your chosen directory via the native save file picker.
@@ -108,7 +109,7 @@ RSS-Reeder provides native desktop integration for OPML subscription management:
 
 ## Keyboard Shortcuts
 
-When the RSS-Reeder popup is open:
+When the RSS-Feeder popup is open:
 
 | Shortcut | Action |
 | :--- | :--- |
@@ -132,6 +133,7 @@ Click `󰒓` in the reader header to access Settings:
 - **Items Per Page**: Number of articles displayed per page (`10`, `20`, `50`).
 - **Feed Retention Time**: Number of days (1 to 3650 days, default: `30`) to keep cached articles. Articles older than this threshold are pruned from local history during cleanup; your subscriptions themselves remain untouched.
 - **Unread-Only Default**: When enabled, the reader starts in unread-only mode every time it is opened.
+- **Strip YouTube Shorts**: When enabled (default), YouTube Shorts are removed from YouTube feeds. Each video is classified once by probing `youtube.com/shorts/<id>` (HTTP 200 = a Short) and the verdict is cached locally, so only newly published videos are ever probed.
 
 ---
 
@@ -140,18 +142,18 @@ Click `󰒓` in the reader header to access Settings:
 - **Plugin Configuration**: Settings and subscriptions are stored in standard Omarchy configuration (`~/.config/omarchy/shell.json`).
 - **Local Cache & Read History**: Cached articles and read status identities are saved locally in:
   ```text
-  ~/.local/share/omarchy-rss-reeder/state.json
+  ~/.local/share/omarchy-rss-feeder/state.json
   ```
-  *(Legacy state from `~/.local/share/omarchy-rss-plugin/state.json` is automatically migrated on initial run).*
+  *(Existing state from `~/.local/share/omarchy-rss-reeder/state.json` — or the older `omarchy-rss-plugin` — is automatically migrated on initial run).*
 
 ---
 
 ## Removal
 
-To disable and remove the RSS-Reeder plugin:
+To disable and remove the RSS-Feeder plugin:
 
 ```bash
-omarchy plugin remove io.github.sanjyay.rss-reeder
+omarchy plugin remove io.github.keegan-sucks.rss-feeder
 omarchy-restart-shell
 ```
 
@@ -160,14 +162,14 @@ omarchy-restart-shell
 To completely remove local cached articles and read history:
 
 ```bash
-rm -rf ~/.local/share/omarchy-rss-reeder
+rm -rf ~/.local/share/omarchy-rss-feeder
 ```
 
 ---
 
 ## Dependencies
 
-RSS-Reeder uses native utilities already included in standard Omarchy installations:
+RSS-Feeder uses native utilities already included in standard Omarchy installations:
 
 - `curl`: Secure background feed fetching with size and redirect limits.
 - `python3` (with `python-gobject` / `Gio`): Non-blocking native desktop portal integration (`org.freedesktop.portal.FileChooser`) for file selection.
@@ -186,13 +188,11 @@ No additional third-party dependencies need to be installed.
 ---
 ## Acknowledgements
 
-RSS-Reeder was inspired by [rafaelvzago/omarchy-rss-plugin](https://github.com/rafaelvzago/omarchy-rss-plugin), which provided useful reference points for building an RSS reader as an Omarchy bar plugin.
+RSS-Feeder is a fork of [sanjyay/rss-reeder](https://github.com/sanjyay/rss-reeder), adding per-feed category editing, YouTube Shorts filtering, and article-row interaction fixes (a larger, non-flashing mark-read target). Huge thanks to sanjyay for the original RSS-Reeder plugin.
 
-RSS-Reeder has since evolved with its own UI, category workflow, OPML import/export flow, subscription management, retention controls, and other functionality.
-
-Thanks to Rafael Vzago for publishing the original project and making it available as open source.
+RSS-Reeder was itself inspired by [rafaelvzago/omarchy-rss-plugin](https://github.com/rafaelvzago/omarchy-rss-plugin). Thanks to Rafael Vzago for publishing the original project and making it available as open source.
 
 ## License & Acknowledgements
 
-RSS-Reeder is licensed under the [MIT License](LICENSE).
+RSS-Feeder is licensed under the [MIT License](LICENSE).
 

@@ -151,7 +151,7 @@ test("specific critical UI elements have Text.PlainText verified", () => {
     { file: "SubscriptionsView.qml", target: "modelData.display" },
     { file: "SubscriptionsView.qml", target: "modelData.title || modelData.url" },
     { file: "SubscriptionsView.qml", target: "modelData.url" },
-    { file: "SubscriptionsView.qml", target: 'modelData.category || ""' },
+    { file: "SubscriptionsView.qml", target: "modelData.category ? modelData.category" },
   ];
 
   for (const check of checks) {

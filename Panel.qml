@@ -7,8 +7,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "io.github.sanjyay.rss-reeder"
-  ipcTarget: "io.github.sanjyay.rss-reeder"
+  moduleName: "io.github.keegan-sucks.rss-feeder"
+  ipcTarget: "io.github.keegan-sucks.rss-feeder"
   manageIpc: false
 
   property var anchorItem: null
@@ -25,6 +25,7 @@ Panel {
   property int itemsPerPage: 10
   property int retentionDays: 30
   property bool unreadOnlyDefault: false
+  property bool stripYouTubeShorts: true
   property string barSection: "right"
   property var lastImportResult: null
   property string shareStatus: ""
@@ -69,6 +70,7 @@ Panel {
       root.itemsPerPage = root.hostWidget.configuredItemsPerPage
       root.retentionDays = root.hostWidget.configuredRetentionDays
       root.unreadOnlyDefault = root.hostWidget.configuredUnreadOnlyDefault
+      root.stripYouTubeShorts = root.hostWidget.configuredStripShorts
       root.barSection = root.hostWidget.configuredBarSection
       root.lastImportResult = null
       root.shareStatus = ""
@@ -228,6 +230,7 @@ Panel {
           retentionDays: root.retentionDays
           barSection: root.barSection
           unreadOnlyDefault: root.unreadOnlyDefault
+          stripYouTubeShorts: root.stripYouTubeShorts
           shareStatus: root.shareStatus
           contentForeground: root.contentForeground
           contentFontFamily: root.contentFontFamily

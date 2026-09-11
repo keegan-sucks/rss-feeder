@@ -7,10 +7,11 @@ import "Model.js" as Model
 
 BarWidget {
   id: root
-  moduleName: "io.github.sanjyay.rss-reeder"
+  moduleName: "io.github.keegan-sucks.rss-feeder"
 
   readonly property var legacySettings: {
     var fromLayout = Model.entryFromLayout(root.bar && root.bar.layoutConfig, [
+      "io.github.keegan-sucks.rss-feeder",
       "io.github.sanjyay.rss-reeder",
       "io.github.sanjyay.rssreeder",
       "io.github.rafaelvzago.rss"
@@ -61,6 +62,8 @@ BarWidget {
   readonly property int configuredItemsPerPage: Model.pageSize(getSetting("itemsPerPage", 10))
   readonly property int configuredRetentionDays: Model.normalizeRetentionDays(getSetting("retentionDays", getSetting("feedRetentionDays", 30)))
   readonly property bool configuredUnreadOnlyDefault: getSetting("unreadOnlyDefault", false) === true
+  // Strip YouTube Shorts from YouTube feeds. Defaults on.
+  readonly property bool configuredStripShorts: getSetting("stripYouTubeShorts", true) === true
   readonly property string configuredBarSection: {
     var fromLayout = Model.sectionFromLayout(root.bar && root.bar.layoutConfig, root.moduleName)
     if (fromLayout) return fromLayout
@@ -74,9 +77,12 @@ BarWidget {
   readonly property int badgeCount: Model.unreadCount(root.items, root.readSet)
   readonly property string statePath: {
     var home = Quickshell.env("HOME") || ""
-    return home + "/.local/share/omarchy-rss-reeder/state.json"
+    return home + "/.local/share/omarchy-rss-feeder/state.json"
   }
   property var items: []
+  // Per-video-id Shorts classification cache: { videoId: "short" | "video" }.
+  property var shortsCache: ({})
+  property var shortsQueue: []
   property var pendingFetchQueue: []
   property int totalFeeds: 0
   property int completedFeeds: 0
@@ -113,6 +119,7 @@ BarWidget {
     if ("itemsPerPage" in target) target.itemsPerPage = root.configuredItemsPerPage
     if ("retentionDays" in target) target.retentionDays = root.configuredRetentionDays
     if ("unreadOnlyDefault" in target) target.unreadOnlyDefault = root.configuredUnreadOnlyDefault
+    if ("stripYouTubeShorts" in target) target.stripYouTubeShorts = root.configuredStripShorts
     if ("barSection" in target) target.barSection = root.configuredBarSection
     if ("readSet" in target) target.readSet = root.readSet
     if ("isFetching" in target) target.isFetching = root.isFetching
@@ -143,7 +150,7 @@ BarWidget {
 
   function persistState() {
     if (!root.stateReady) return
-    stateFile.setText(Model.serializeState(root.items, root.readSet) + "\n")
+    stateFile.setText(Model.serializeState(root.items, root.readSet, root.shortsCache) + "\n")
   }
 
   function applyLocalRead(next) {
@@ -258,7 +265,7 @@ BarWidget {
     var d = now.getDate()
     var monthStr = m < 10 ? ("0" + m) : String(m)
     var dayStr = d < 10 ? ("0" + d) : String(d)
-    return "rss-reeder-" + year + "-" + monthStr + "-" + dayStr + ".opml"
+    return "rss-feeder-" + year + "-" + monthStr + "-" + dayStr + ".opml"
   }
 
   function requestOpmlFileExport() {
@@ -273,7 +280,7 @@ BarWidget {
       "from gi.repository import Gio, GLib\n" +
       "parser = argparse.ArgumentParser(add_help=False)\n" +
       "parser.add_argument('--title', default='Save OPML file')\n" +
-      "parser.add_argument('--default-name', default='rss-reeder.opml')\n" +
+      "parser.add_argument('--default-name', default='rss-feeder.opml')\n" +
       "parser.add_argument('--extensions', default='opml xml')\n" +
       "args, _ = parser.parse_known_args()\n" +
       "bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)\n" +
@@ -365,13 +372,14 @@ BarWidget {
     return updateSubscriptions(merged)
   }
 
-  function saveConfig(subs, minutes, perFeed, perPage, section, defaultUnreadOnly, retention) {
+  function saveConfig(subs, minutes, perFeed, perPage, section, defaultUnreadOnly, retention, stripShorts) {
     var normalized = Model.normalizeSubscriptions(subs !== undefined ? subs : root.configuredSubscriptions)
     var feedList = []
     for (var i = 0; i < normalized.length; i++) {
       if (normalized[i].enabled !== false) feedList.push(normalized[i].url)
     }
     var retDays = Model.normalizeRetentionDays(retention !== undefined ? retention : root.configuredRetentionDays)
+    var strip = (stripShorts !== undefined) ? (stripShorts === true) : root.configuredStripShorts
     persistSettings({
       subscriptions: Model.serializeSubscriptions(normalized),
       feedUrls: Model.serializeFeedUrls(feedList),
@@ -380,7 +388,8 @@ BarWidget {
       itemsPerPage: Model.pageSize(perPage),
       barSection: Model.barSection(section),
       unreadOnlyDefault: defaultUnreadOnly === true,
-      retentionDays: retDays
+      retentionDays: retDays,
+      stripYouTubeShorts: strip
     })
     applyBarSection(section)
     applyRetentionCleanup()
@@ -474,6 +483,15 @@ BarWidget {
             root.configuredSubscriptions
           )
 
+          // Drop already-known Shorts, then probe any new YouTube video ids whose
+          // Short/not-Short status we do not yet know.
+          if (root.configuredStripShorts) {
+            root.items = Model.filterShorts(root.items, root.shortsCache, true)
+            if (Model.isYouTubeFeedUrl(url)) {
+              root.enqueueShortChecks(Model.unknownShortCandidates(incoming, root.shortsCache, true))
+            }
+          }
+
           // Immediately update UI / Panel
           injectPanel()
 
@@ -529,7 +547,7 @@ BarWidget {
           "--max-redirs", "5",
           "--max-filesize", String(Model.maxFeedBytes()),
           "--max-time", "20",
-          "-A", "omarchy-rss-reeder/0.1.0",
+          "-A", "omarchy-rss-feeder/0.2.0",
           "-H", "Accept: application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8",
           "-w", "\n__OMARCHY_CT__:%{content_type}",
           nextUrl
@@ -596,6 +614,70 @@ BarWidget {
     root.startFetch()
   }
 
+  // --- YouTube Shorts classification ----------------------------------------
+  // Queue unknown video ids and probe them with a small worker pool. Each id is
+  // checked once; the verdict is cached in root.shortsCache and persisted.
+  function enqueueShortChecks(videoIds) {
+    if (!root.configuredStripShorts) return
+    if (!videoIds || !videoIds.length) return
+    var q = (root.shortsQueue || []).slice()
+    var seen = {}
+    for (var i = 0; i < q.length; i++) seen[q[i]] = true
+    for (var j = 0; j < videoIds.length; j++) {
+      var v = videoIds[j]
+      if (v && !seen[v] && !root.shortsCache[v]) {
+        seen[v] = true
+        q.push(v)
+      }
+    }
+    root.shortsQueue = q
+    pumpShortsQueue()
+  }
+
+  function pumpShortsQueue() {
+    var pool = [shortsWorker0, shortsWorker1, shortsWorker2]
+    for (var i = 0; i < pool.length; i++) {
+      var w = pool[i]
+      if (w.running) continue
+      if (root.shortsQueue && root.shortsQueue.length > 0) {
+        var vid = root.shortsQueue[0]
+        var rest = []
+        for (var r = 1; r < root.shortsQueue.length; r++) rest.push(root.shortsQueue[r])
+        root.shortsQueue = rest
+        w.currentVideoId = vid
+        w.command = [
+          "curl", "-s", "-I", "-o", "/dev/null",
+          "--proto", "=https",
+          "--max-time", "15",
+          "-A", "Mozilla/5.0",
+          "-w", "%{http_code}",
+          Model.shortsProbeUrl(vid)
+        ]
+        w.running = true
+      }
+    }
+  }
+
+  function onShortWorkerFinished(worker, exitCode, rawOutput) {
+    var vid = worker.currentVideoId
+    worker.currentVideoId = ""
+    if (vid) {
+      var verdict = (exitCode === 0) ? Model.classifyShortStatus(String(rawOutput || "").trim()) : ""
+      if (verdict === "short" || verdict === "video") {
+        var next = {}
+        for (var k in root.shortsCache) next[k] = root.shortsCache[k]
+        next[vid] = verdict
+        root.shortsCache = next
+        if (verdict === "short" && root.configuredStripShorts) {
+          root.items = Model.filterShorts(root.items, root.shortsCache, true)
+          injectPanel()
+        }
+        persistState()
+      }
+    }
+    pumpShortsQueue()
+  }
+
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
@@ -624,6 +706,16 @@ BarWidget {
   onSettingsChanged: injectPanel()
   onConfiguredFeedUrlsChanged: fetchFeed()
   onConfiguredRetentionDaysChanged: applyRetentionCleanup()
+  onConfiguredStripShortsChanged: {
+    if (root.configuredStripShorts) {
+      // Drop known Shorts now; probe anything still unclassified.
+      root.items = Model.filterShorts(root.items, root.shortsCache, true)
+      injectPanel()
+      persistState()
+      root.enqueueShortChecks(Model.unknownShortCandidates(root.items, root.shortsCache, true))
+    }
+    // When turned off, Shorts reappear on the next feed refresh.
+  }
 
   Component.onCompleted: mkdirProcess.running = true
 
@@ -638,7 +730,7 @@ BarWidget {
     id: mkdirProcess
     command: [
       "sh", "-c",
-      "mkdir -p \"$HOME/.local/share/omarchy-rss-reeder\"; if [ ! -f \"$HOME/.local/share/omarchy-rss-reeder/state.json\" ] && [ -f \"$HOME/.local/share/omarchy-rss-plugin/state.json\" ]; then cp \"$HOME/.local/share/omarchy-rss-plugin/state.json\" \"$HOME/.local/share/omarchy-rss-reeder/state.json\"; fi"
+      "mkdir -p \"$HOME/.local/share/omarchy-rss-feeder\"; if [ ! -f \"$HOME/.local/share/omarchy-rss-feeder/state.json\" ]; then for src in omarchy-rss-reeder omarchy-rss-plugin; do if [ -f \"$HOME/.local/share/$src/state.json\" ]; then cp \"$HOME/.local/share/$src/state.json\" \"$HOME/.local/share/omarchy-rss-feeder/state.json\"; break; fi; done; fi"
     ]
     onExited: stateFile.reload()
   }
@@ -652,9 +744,11 @@ BarWidget {
     onLoaded: {
       var parsed = Model.parseState(text())
       root.localReadSet = parsed.readIdentities || []
+      root.shortsCache = parsed.shortsCache || ({})
       if (parsed.items && parsed.items.length) {
         var pruned = Model.pruneArticlesByRetention(parsed.items, root.configuredRetentionDays)
-        root.items = Model.enrichArticles(pruned, root.configuredSubscriptions)
+        var enriched = Model.enrichArticles(pruned, root.configuredSubscriptions)
+        root.items = Model.filterShorts(enriched, root.shortsCache, root.configuredStripShorts)
       } else {
         root.items = []
       }
@@ -714,6 +808,43 @@ BarWidget {
     }
     onExited: function(exitCode) {
       root.onWorkerFinished(fetchWorker3, exitCode, fetchWorker3Stdout.text)
+    }
+  }
+
+  // Shorts classification workers (probe youtube.com/shorts/<id> for HTTP status).
+  Process {
+    id: shortsWorker0
+    property string currentVideoId: ""
+    stdout: StdioCollector {
+      id: shortsWorker0Stdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      root.onShortWorkerFinished(shortsWorker0, exitCode, shortsWorker0Stdout.text)
+    }
+  }
+
+  Process {
+    id: shortsWorker1
+    property string currentVideoId: ""
+    stdout: StdioCollector {
+      id: shortsWorker1Stdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      root.onShortWorkerFinished(shortsWorker1, exitCode, shortsWorker1Stdout.text)
+    }
+  }
+
+  Process {
+    id: shortsWorker2
+    property string currentVideoId: ""
+    stdout: StdioCollector {
+      id: shortsWorker2Stdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      root.onShortWorkerFinished(shortsWorker2, exitCode, shortsWorker2Stdout.text)
     }
   }
 
