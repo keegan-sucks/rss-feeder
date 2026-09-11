@@ -75,10 +75,17 @@ BarWidget {
   property var localReadSet: []
   readonly property var readSet: root.localReadSet || []
   readonly property int badgeCount: Model.unreadCount(root.items, root.readSet)
-  readonly property string statePath: {
-    var home = Quickshell.env("HOME") || ""
-    return home + "/.local/share/omarchy-rss-feeder/state.json"
-  }
+  // Absolute, trusted tool paths. The plugin runs unsandboxed inside the
+  // Omarchy shell, so every child process is launched by absolute path rather
+  // than resolved through the inherited PATH, where a shadow executable could
+  // otherwise be planted ahead of the real one.
+  readonly property string pythonBin: "/usr/bin/python3"
+  readonly property string curlBin: "/usr/bin/curl"
+  readonly property string fileSelectBin: "/usr/bin/omarchy-file-select"
+  // Reads/writes state.json through the hardened, no-follow store helper that
+  // ships next to this file. Resolved from this component's own directory, not
+  // from PATH.
+  readonly property string stateStoreScript: Model.filePathFromUrl(Qt.resolvedUrl("state-store.py"))
   property var items: []
   // Per-video-id Shorts classification cache: { videoId: "short" | "video" }.
   property var shortsCache: ({})
@@ -148,9 +155,41 @@ BarWidget {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
+  // Serialized, coalesced state writes. persistState() records the latest
+  // snapshot and kicks the writer; while a write is in flight, later calls just
+  // mark the store dirty and the writer re-runs once on exit, so overlapping
+  // writes never race.
+  property string pendingStateText: ""
+  property bool stateDirty: false
+
   function persistState() {
     if (!root.stateReady) return
-    stateFile.setText(Model.serializeState(root.items, root.readSet, root.shortsCache) + "\n")
+    root.pendingStateText = Model.serializeState(root.items, root.readSet, root.shortsCache) + "\n"
+    root.stateDirty = true
+    flushState()
+  }
+
+  function flushState() {
+    if (stateWriteProcess.running || !root.stateDirty) return
+    root.stateDirty = false
+    stateWriteProcess.payload = root.pendingStateText
+    stateWriteProcess.running = true
+  }
+
+  function loadStateFromText(txt) {
+    var parsed = Model.parseState(txt)
+    root.localReadSet = parsed.readIdentities || []
+    root.shortsCache = parsed.shortsCache || ({})
+    if (parsed.items && parsed.items.length) {
+      var pruned = Model.pruneArticlesByRetention(parsed.items, root.configuredRetentionDays)
+      var enriched = Model.enrichArticles(pruned, root.configuredSubscriptions)
+      root.items = Model.filterShorts(enriched, root.shortsCache, root.configuredStripShorts)
+    } else {
+      root.items = []
+    }
+    root.stateReady = true
+    root.injectPanel()
+    root.fetchFeed()
   }
 
   function applyLocalRead(next) {
@@ -197,7 +236,7 @@ BarWidget {
     root.selectedOpmlPath = resolvedPath
     opmlValidateAndReadProcess.sourcePath = resolvedPath
     opmlValidateAndReadProcess.command = [
-      "python3", "-c",
+      root.pythonBin, "-c",
       "import os, sys\n" +
       "path = sys.argv[1]\n" +
       "if not os.path.exists(path):\n" +
@@ -274,7 +313,7 @@ BarWidget {
     var defaultName = defaultExportFilename()
     console.log("[RSS-REEDER] requestOpmlFileExport entered, defaultName:", defaultName)
     opmlExportSelectProcess.command = [
-      "python3", "-c",
+      root.pythonBin, "-c",
       "import argparse, os, sys, gi\n" +
       "gi.require_version('Gio', '2.0')\n" +
       "from gi.repository import Gio, GLib\n" +
@@ -331,7 +370,7 @@ BarWidget {
     opmlWriteProcess.targetPath = resolvedPath
     opmlWriteProcess.exportedCount = root.configuredSubscriptions.length
     opmlWriteProcess.command = [
-      "python3", "-c",
+      root.pythonBin, "-c",
       "import sys\n" +
       "path = sys.argv[1]\n" +
       "content = sys.argv[2]\n" +
@@ -541,13 +580,13 @@ BarWidget {
 
         w.currentUrl = nextUrl
         w.command = [
-          "curl", "-fsSL",
+          root.curlBin, "-fsSL",
           "--proto", "=https",
           "--proto-redir", "=https",
           "--max-redirs", "5",
           "--max-filesize", String(Model.maxFeedBytes()),
           "--max-time", "20",
-          "-A", "omarchy-rss-feeder/0.2.0",
+          "-A", "omarchy-rss-feeder/0.2.1",
           "-H", "Accept: application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8",
           "-w", "\n__OMARCHY_CT__:%{content_type}",
           nextUrl
@@ -646,7 +685,7 @@ BarWidget {
         root.shortsQueue = rest
         w.currentVideoId = vid
         w.command = [
-          "curl", "-s", "-I", "-o", "/dev/null",
+          root.curlBin, "-s", "-I", "-o", "/dev/null",
           "--proto", "=https",
           "--max-time", "15",
           "-A", "Mozilla/5.0",
@@ -717,7 +756,7 @@ BarWidget {
     // When turned off, Shorts reappear on the next feed refresh.
   }
 
-  Component.onCompleted: mkdirProcess.running = true
+  Component.onCompleted: stateReadProcess.running = true
 
   Timer {
     interval: root.configuredPollIntervalMinutes * 60 * 1000
@@ -726,40 +765,46 @@ BarWidget {
     onTriggered: root.fetchFeed()
   }
 
+  // Loads state.json (creating the store dir and migrating a legacy fork's
+  // state once, if ours is absent) through the hardened no-follow helper.
   Process {
-    id: mkdirProcess
-    command: [
-      "sh", "-c",
-      "mkdir -p \"$HOME/.local/share/omarchy-rss-feeder\"; if [ ! -f \"$HOME/.local/share/omarchy-rss-feeder/state.json\" ]; then for src in omarchy-rss-reeder omarchy-rss-plugin; do if [ -f \"$HOME/.local/share/$src/state.json\" ]; then cp \"$HOME/.local/share/$src/state.json\" \"$HOME/.local/share/omarchy-rss-feeder/state.json\"; break; fi; done; fi"
-    ]
-    onExited: stateFile.reload()
+    id: stateReadProcess
+    command: [root.pythonBin, root.stateStoreScript, "read"]
+    stdout: StdioCollector { id: stateReadOut; waitForEnd: true }
+    stderr: StdioCollector { id: stateReadErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.loadStateFromText(stateReadOut.text)
+      } else {
+        if (exitCode !== 3) {
+          console.warn("[RSS-Feeder] state read failed (" + exitCode + "): " + String(stateReadErr.text || "").trim())
+        }
+        root.stateReady = true
+        root.localReadSet = root.settingsReadSet || []
+        root.fetchFeed()
+      }
+    }
   }
 
-  FileView {
-    id: stateFile
-    path: root.statePath
-    watchChanges: false
-    atomicWrites: true
-    printErrors: false
-    onLoaded: {
-      var parsed = Model.parseState(text())
-      root.localReadSet = parsed.readIdentities || []
-      root.shortsCache = parsed.shortsCache || ({})
-      if (parsed.items && parsed.items.length) {
-        var pruned = Model.pruneArticlesByRetention(parsed.items, root.configuredRetentionDays)
-        var enriched = Model.enrichArticles(pruned, root.configuredSubscriptions)
-        root.items = Model.filterShorts(enriched, root.shortsCache, root.configuredStripShorts)
-      } else {
-        root.items = []
-      }
-      root.stateReady = true
-      root.injectPanel()
-      root.fetchFeed()
+  // Writes state.json through the hardened no-follow helper. The payload goes
+  // over stdin (never argv); closing stdin sends EOF so the helper's bounded
+  // read completes. flushState() re-runs this if more state accrued mid-write.
+  Process {
+    id: stateWriteProcess
+    property string payload: ""
+    command: [root.pythonBin, root.stateStoreScript, "write"]
+    stdinEnabled: true
+    stderr: StdioCollector { id: stateWriteErr; waitForEnd: true }
+    onStarted: {
+      write(payload)
+      payload = ""
+      stdinEnabled = false
     }
-    onLoadFailed: {
-      root.stateReady = true
-      root.localReadSet = root.settingsReadSet || []
-      root.fetchFeed()
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        console.warn("[RSS-Feeder] state write failed (" + exitCode + "): " + String(stateWriteErr.text || "").trim())
+      }
+      root.flushState()
     }
   }
 
@@ -850,7 +895,7 @@ BarWidget {
 
   Process {
     id: opmlSelectProcess
-    command: ["omarchy-file-select", "--title", "Select OPML file", "--extensions", "opml xml"]
+    command: [root.fileSelectBin, "--title", "Select OPML file", "--extensions", "opml xml"]
     stdout: StdioCollector {
       id: opmlSelectStdout
       waitForEnd: true
